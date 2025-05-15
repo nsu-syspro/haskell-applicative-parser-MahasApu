@@ -2,6 +2,7 @@
 -- The above pragma enables all warnings
 
 {-# OPTIONS_GHC -Wno-unused-top-binds #-}
+{-# LANGUAGE InstanceSigs #-}
 -- The above pragma temporarily disables warnings about Parser constructor and runParser not being used
 
 module Parser
@@ -21,6 +22,7 @@ module Parser
   ) where
 
 import Control.Applicative
+import Data.List (nub)
 
 -- | Value annotated with position of parsed input starting from 0
 data Position a = Position Int a
@@ -46,23 +48,46 @@ newtype Parser a = Parser { runParser :: Input -> Parsed a }
 
 -- | Runs given 'Parser' on given input string
 parse :: Parser a -> String -> Parsed a
-parse = error "TODO: define parse"
+parse (Parser ipa) s = ipa (Position 0 s) 
 
 -- | Runs given 'Parser' on given input string with erasure of @Parsed a@ to @Maybe a@
 parseMaybe :: Parser a -> String -> Maybe a
-parseMaybe = error "TODO: define parseMaybe"
+parseMaybe p s = case parse p s of
+  Parsed a _ -> Just a
+  Failed   _ -> Nothing 
 
 instance Functor Parser where
-  fmap = error "TODO: define fmap (Parser)"
+  fmap :: (a -> b) -> Parser a -> Parser b
+  fmap f (Parser pa) = Parser $ \i ->
+    case pa i of
+      Parsed a irest -> Parsed (f a) irest
+      Failed e       -> Failed e
 
 instance Applicative Parser where
-  pure = error "TODO: define pure (Parser)"
-  (<*>) = error " TODO: define <*> (Parser)"
+  pure :: a -> Parser a
+  pure a  = Parser $ \i -> Parsed a i
+  
+    -- \i -> pab i :: Input -> Parsed (a -> b)
+  -- Parsed ab irest -> apply to a in Parsed a
+  (<*>) :: Parser (a -> b) -> Parser a -> Parser b
+  (Parser pab) <*> (Parser pa) = Parser $ \i ->
+    case pab i of
+      Failed e1        -> Failed e1
+      Parsed ab irest  -> case pa irest of
+        Failed e2         -> Failed e2
+        Parsed a iirest   -> Parsed (ab a) iirest
+      
 
 instance Alternative Parser where
-  empty = error "TODO: define empty (Parser)"
+  empty = Parser $ \_ -> Failed mempty
   -- Note: when both parsers fail, their errors are accumulated and *deduplicated* to simplify debugging
-  (<|>) = error " TODO: define <|> (Parser)"
+  (<|>) :: Parser a -> Parser a -> Parser a
+  (Parser pa1) <|> (Parser pa2) = Parser $ \i -> 
+    case pa1 i of
+        p1@(Parsed _ _)  -> p1
+        Failed e1        -> case pa2 i of
+          p2@(Parsed _ _)  -> p2
+          Failed e2        -> Failed $ nub $ e1 <> e2
 
 -- | Parses single character satisfying given predicate
 --
@@ -78,4 +103,9 @@ instance Alternative Parser where
 -- Failed [Position 0 EndOfInput]
 --
 satisfy :: (Char -> Bool) -> Parser Char
-satisfy = error "TODO: define satisfy"
+satisfy check = Parser $ \(Position pos i) ->
+  case i of
+    [] -> Failed [Position pos EndOfInput]
+    (ch : chs) -> if check ch 
+      then Parsed ch (Position (succ pos) chs)
+      else Failed [Position pos $ Unexpected ch]
