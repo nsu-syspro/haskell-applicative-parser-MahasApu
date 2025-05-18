@@ -76,8 +76,8 @@ instance Applicative Parser where
       Parsed ab irest  -> case pa irest of
         Failed e2         -> Failed e2
         Parsed a iirest   -> Parsed (ab a) iirest
+  
       
-
 instance Alternative Parser where
   empty = Parser $ \_ -> Failed mempty
   -- Note: when both parsers fail, their errors are accumulated and *deduplicated* to simplify debugging
@@ -88,6 +88,14 @@ instance Alternative Parser where
         Failed e1        -> case pa2 i of
           p2@(Parsed _ _)  -> p2
           Failed e2        -> Failed $ nub $ e1 <> e2
+
+instance Monad Parser where 
+  (>>=) :: Parser a -> (a -> Parser b) -> Parser b
+  (Parser pa) >>= f = Parser $ \i ->
+    case pa i of
+      Failed e       -> Failed e
+      Parsed a irest -> let Parser pb = f a in pb irest
+
 
 -- | Parses single character satisfying given predicate
 --
