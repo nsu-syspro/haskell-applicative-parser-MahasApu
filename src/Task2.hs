@@ -3,7 +3,12 @@
 
 module Task2 where
 
-import Parser
+import Parser (Parser)
+import ParserCombinators ( char, choice, spaces, string, oneOf )
+import Task1 ( digit, nat )
+import Data.List (elemIndex)
+import Control.Applicative ((<|>), empty)
+
 
 -- | Date representation
 --
@@ -58,5 +63,79 @@ newtype Year  = Year  Int deriving (Show, Eq)
 -- >>> parse date "12/12/2012"
 -- Failed [PosError 2 (Unexpected '/'),PosError 0 (Unexpected '1')]
 --
+
+nonZeroDigit :: Parser Char
+nonZeroDigit = oneOf ['1'..'9']
+
+day :: Parser Day
+day =   readDay $ decade '0' nonZeroDigit
+
+usDay :: Parser Day
+usDay = readDay $ (: []) <$> nonZeroDigit
+
+readDay :: Parser String -> Parser Day
+readDay p = Day . read <$> (dayChoice <|> p)
+
+
+dayChoice :: Parser String
+dayChoice = choice
+  [ decade '1' digit,
+    decade '2' digit,
+    string "30",
+    string "31"
+  ]
+
+decade :: Char -> Parser Char -> Parser String
+decade ch p = do
+  d1 <- char ch
+  d2 <- p
+  pure [d1, d2]
+
+month :: Parser Month
+month = Month . read <$> choice 
+  [ decade '0' nonZeroDigit,
+    string "10", 
+    string "11",
+    string "12"
+  ]
+
+
+monthNames :: [String]
+monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+choiceStrings :: [String] -> Parser String
+choiceStrings = choice . map string
+
+lookupMonth :: [String] -> String -> Parser Month
+lookupMonth names = maybe empty (pure . Month . succ) . (`elemIndex` names)
+
+monthName :: Parser Month
+monthName = choiceStrings monthNames >>= lookupMonth monthNames
+
+year :: Parser Year
+year = Year . fromIntegral <$> nat
+
+format :: Char -> Parser Date
+format ch = do
+  d <- day
+  _ <- char ch
+  m <- month
+  _ <- char ch
+  Date d m <$> year
+
+usFormat :: Parser Date
+usFormat = do
+  m <- monthName
+  _ <- spaces
+  d <- usDay
+  _ <- char ' '
+  Date d m <$> year
+
+dotFormat :: Parser Date
+dotFormat = format '.'
+
+hyphenFormat :: Parser Date
+hyphenFormat = format '-'
+
 date :: Parser Date
-date = error "TODO: define date"
+date = choice [dotFormat, hyphenFormat, usFormat]
